@@ -3,22 +3,24 @@ package hca
 import "math"
 
 type stChannel struct {
-	block      [0x80]float32
+	chType int
+	count  uint32
+
 	base       [0x80]float32
 	value      [0x80]byte
+	valueIndex uint32
 	scale      [0x80]byte
 	value2     [8]byte
-	t          int
-	valueIndex uint32
-	count      uint32
-	wav1       [0x80]float32
-	wav2       [0x80]float32
-	wav3       [0x80]float32
-	wave       [8][0x80]float32
+
+	block []float32
+
+	wavTmp []float32
+	wave   [8][0x80]float32
 }
 
-func NewChannel() *stChannel {
+func newChannel() *stChannel {
 	ch := stChannel{}
+	ch.block = make([]float32, 0x80)
 	for i := range ch.block {
 		ch.block[i] = 0
 	}
@@ -34,17 +36,12 @@ func NewChannel() *stChannel {
 	for i := range ch.value2 {
 		ch.value2[i] = 0
 	}
-	ch.t = 0
+	ch.chType = 0
 	ch.count = 0
 	ch.valueIndex = 0
-	for i := range ch.wav1 {
-		ch.wav1[i] = 0
-	}
-	for i := range ch.wav2 {
-		ch.wav2[i] = 0
-	}
-	for i := range ch.wav3 {
-		ch.wav3[i] = 0
+	ch.wavTmp = make([]float32, 0x80)
+	for i := range ch.wavTmp {
+		ch.wavTmp[i] = 0
 	}
 	for i := range ch.wave {
 		for j := range ch.wave[i] {
@@ -93,7 +90,8 @@ var (
 	scaleFloat = uint2float1D(scaleInt)
 )
 
-func (ch *stChannel) Decode1(data *clData, a uint32, b int, ath []byte) {
+// Init set value, scale and base
+func (ch *stChannel) Init(data *clData, a uint32, b int, ath []byte) {
 	v := data.GetBit(3)
 	if v >= 6 {
 		for i := uint32(0); i < ch.count; i++ {
@@ -119,7 +117,7 @@ func (ch *stChannel) Decode1(data *clData, a uint32, b int, ath []byte) {
 		}
 	}
 
-	if ch.t == 2 {
+	if ch.chType == 2 {
 		v = data.CheckBit(4)
 		ch.value2[0] = byte(v)
 		if v < 15 {
@@ -157,11 +155,12 @@ func (ch *stChannel) Decode1(data *clData, a uint32, b int, ath []byte) {
 	}
 }
 
-func (ch *stChannel) Decode2(data *clData) {
-	list1 := []byte{
+// Fetch set block
+func (ch *stChannel) Fetch(data *clData) {
+	sizeList := []byte{
 		0, 2, 3, 3, 4, 4, 4, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 	}
-	list2 := []byte{
+	list2 := []int{
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		1, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		2, 2, 2, 2, 2, 2, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -185,14 +184,15 @@ func (ch *stChannel) Decode2(data *clData) {
 	for i := uint32(0); i < ch.count; i++ {
 		var f float32
 		s := int(ch.scale[i])
-		bitSize := int(list1[s])
+		bitSize := int(sizeList[s])
 		v := int(data.GetBit(bitSize))
 		if s < 8 {
 			v += s << 4
-			data.AddBit(int(list2[v]) - bitSize)
+			data.AddBit(list2[v] - bitSize)
 			f = list3[v]
 		} else {
-			v = (1 - ((v & 1) << 1)) * (v >> 1)
+			sign := (1 - ((v & 1) << 1))
+			v = sign * (v >> 1)
 			if v == 0 {
 				data.AddBit(-1)
 			}
@@ -231,8 +231,9 @@ var (
 	d3listFloat = uint2float1D(d3listInt[1])
 )
 
-func (ch *stChannel) Decode3(a, b, c, d uint32) {
-	if ch.t != 2 && b != 0 {
+// Decode3 set block
+func (ch *stChannel) BlockSetup1(a, b, c, d uint32) {
+	if ch.chType != 2 && b != 0 {
 		k := c
 		l := c - 1
 		for i := uint32(0); i < a; i++ {
@@ -267,8 +268,9 @@ var (
 	d4listFloat = uint2float1D(d4listInt)
 )
 
-func (ch *stChannel) Decode4(nextChan *stChannel, index int, a, b, c uint32) {
-	if ch.t == 1 && c != 0 {
+// Decode4 set block
+func (ch *stChannel) BlockSetup2(nextChan *stChannel, index int, a, b, c uint32) {
+	if ch.chType == 1 && c != 0 {
 		f1 := d4listFloat[nextChan.value2[index]]
 		f2 := f1 - 2.0
 		for i := uint32(0); i < a; i++ {
@@ -278,8 +280,83 @@ func (ch *stChannel) Decode4(nextChan *stChannel, index int, a, b, c uint32) {
 	}
 }
 
+func (ch *stChannel) CalcBlock() {
+	blockTemp := make([]float32, len(ch.block))
+
+	s := 0
+	sliceCount := 1
+	sliceHalfSize := 0x40
+	block := &ch.block
+	wavTmp := &blockTemp
+	for i := 0; i < 7; i++ {
+		sliceLeft := 0
+		sliceRight := sliceHalfSize
+		s = 0
+		for j := 0; j < sliceCount; j++ {
+			for k := 0; k < sliceHalfSize; k++ {
+				a := (*block)[s]
+				b := (*block)[s+1]
+				s += 2
+
+				(*wavTmp)[sliceLeft] = b + a
+				(*wavTmp)[sliceRight] = a - b
+				sliceLeft++
+				sliceRight++
+			}
+			sliceLeft += sliceHalfSize
+			sliceRight += sliceHalfSize
+		}
+		w := block
+		block = wavTmp
+		wavTmp = w
+
+		sliceCount <<= 1
+		sliceHalfSize >>= 1
+	}
+
+	sliceCount = 0x40
+	sliceHalfSize = 1
+	block = &ch.block
+	wavTmp = &blockTemp
+	for i := 0; i < 7; i++ {
+		srcSliceLeft := 0
+		srcSliceRight := sliceHalfSize
+
+		dstSliceFirst := 0
+		dstSliceEnd := 2*sliceHalfSize - 1
+		s = 0
+		for j := 0; j < sliceCount; j++ {
+			for k := 0; k < sliceHalfSize; k++ {
+				a := (*wavTmp)[srcSliceLeft]
+				b := (*wavTmp)[srcSliceRight]
+				c := blockBaseFloats1[i][s]
+				d := blockBaseFloats2[i][s]
+				srcSliceLeft++
+				srcSliceRight++
+				s++
+
+				(*block)[dstSliceFirst] = a*c - b*d
+				(*block)[dstSliceEnd] = a*d + b*c
+				dstSliceFirst++
+				dstSliceEnd--
+			}
+			srcSliceLeft += sliceHalfSize
+			srcSliceRight += sliceHalfSize
+
+			dstSliceFirst += sliceHalfSize
+			dstSliceEnd += sliceHalfSize * 3
+		}
+		w := block
+		block = wavTmp
+		wavTmp = w
+
+		sliceCount >>= 1
+		sliceHalfSize <<= 1
+	}
+}
+
 var (
-	d5list1Int = [][]uint32{
+	blockBaseInts1 = [][]uint32{
 		{
 			0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75,
 			0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75, 0x3DA73D75,
@@ -345,7 +422,7 @@ var (
 			0x3F44E3F5, 0x3F42DE29, 0x3F40D0DA, 0x3F3EBC1B, 0x3F3CA003, 0x3F3A7CA4, 0x3F385216, 0x3F36206C,
 		},
 	}
-	d5list2Int = [][]uint32{
+	blockBaseInts2 = [][]uint32{
 		{
 			0xBD0A8BD4, 0x3D0A8BD4, 0x3D0A8BD4, 0xBD0A8BD4, 0x3D0A8BD4, 0xBD0A8BD4, 0xBD0A8BD4, 0x3D0A8BD4,
 			0x3D0A8BD4, 0xBD0A8BD4, 0xBD0A8BD4, 0x3D0A8BD4, 0xBD0A8BD4, 0x3D0A8BD4, 0x3D0A8BD4, 0xBD0A8BD4,
@@ -411,7 +488,37 @@ var (
 			0xBF239DA9, 0xBF26050A, 0xBF286605, 0xBF2AC082, 0xBF2D1469, 0xBF2F61A5, 0xBF31A81D, 0xBF33E7BC,
 		},
 	}
-	d5list3Int = [][]uint32{
+	blockBaseFloats1 = uint2float2D(blockBaseInts1)
+	blockBaseFloats2 = uint2float2D(blockBaseInts2)
+)
+
+// buildWaveBytes set wavTmp and wave
+func (ch *stChannel) buildWaveBytes(index int) {
+	// wave set
+	ch.wave[index] = waveCalc(waveBaseFloats, ch.block, ch.wavTmp)
+
+	// wavTmp set
+	for i := 0; i < 0x40; i++ {
+		ch.wavTmp[i] = waveBaseFloats[1][0x40-1-i] * ch.block[0x40-1-i]
+	}
+	for i := 0; i < 0x40; i++ {
+		ch.wavTmp[0x40+i] = waveBaseFloats[0][0x40-1-i] * ch.block[i]
+	}
+}
+
+func waveCalc(baseFloats [][]float32, block []float32, stream []float32) [0x80]float32 {
+	var result [0x80]float32
+	for i := 0; i < 0x40; i++ {
+		result[i] = baseFloats[0][i]*block[0x40+i] + stream[i]
+	}
+	for i := 0; i < 0x40; i++ {
+		result[0x40+i] = baseFloats[1][i]*block[0x80-1-i] - stream[0x40+i]
+	}
+	return result
+}
+
+var (
+	waveBaseInts = [][]uint32{
 		{
 			0x3A3504F0, 0x3B0183B8, 0x3B70C538, 0x3BBB9268, 0x3C04A809, 0x3C308200, 0x3C61284C, 0x3C8B3F17,
 			0x3CA83992, 0x3CC77FBD, 0x3CE91110, 0x3D0677CD, 0x3D198FC4, 0x3D2DD35C, 0x3D434643, 0x3D59ECC1,
@@ -432,104 +539,8 @@ var (
 			0xBF7FF688, 0xBF7FF9D0, 0xBF7FFC32, 0xBF7FFDDA, 0xBF7FFEED, 0xBF7FFF8F, 0xBF7FFFDF, 0xBF7FFFFC,
 		},
 	}
-	d5list1Float = uint2float2D(d5list1Int)
-	d5list2Float = uint2float2D(d5list2Int)
-	d5list3Float = uint2float2D(d5list3Int)
+	waveBaseFloats = uint2float2D(waveBaseInts)
 )
-
-func (ch *stChannel) Decode5(index int) {
-	s := 0
-
-	sliceCount := 1
-	sliceHalfSize := 0x40
-	block := &ch.block
-	wav1 := &ch.wav1
-	for i := 0; i < 7; i++ {
-		sliceLeft := 0
-		sliceRight := sliceHalfSize
-		s = 0
-		for j := 0; j < sliceCount; j++ {
-			for k := 0; k < sliceHalfSize; k++ {
-				a := (*block)[s]
-				b := (*block)[s+1]
-				s += 2
-
-				(*wav1)[sliceLeft] = b + a
-				(*wav1)[sliceRight] = a - b
-				sliceLeft++
-				sliceRight++
-			}
-			sliceLeft += sliceHalfSize
-			sliceRight += sliceHalfSize
-		}
-		w := block
-		block = wav1
-		wav1 = w
-
-		sliceCount <<= 1
-		sliceHalfSize >>= 1
-	}
-
-	sliceCount = 0x40
-	sliceHalfSize = 1
-	block = &ch.block
-	wav1 = &ch.wav1
-	for i := 0; i < 7; i++ {
-		srcSliceLeft := 0
-		srcSliceRight := sliceHalfSize
-
-		dstSliceFirst := 0
-		dstSliceEnd := 2*sliceHalfSize - 1
-		s = 0
-		for j := 0; j < sliceCount; j++ {
-			for k := 0; k < sliceHalfSize; k++ {
-				a := (*wav1)[srcSliceLeft]
-				b := (*wav1)[srcSliceRight]
-				c := d5list1Float[i][s]
-				d := d5list2Float[i][s]
-				srcSliceLeft++
-				srcSliceRight++
-				s++
-
-				(*block)[dstSliceFirst] = a*c - b*d
-				(*block)[dstSliceEnd] = a*d + b*c
-				dstSliceFirst++
-				dstSliceEnd--
-			}
-			srcSliceLeft += sliceHalfSize
-			srcSliceRight += sliceHalfSize
-
-			dstSliceFirst += sliceHalfSize
-			dstSliceEnd += sliceHalfSize * 3
-		}
-		w := block
-		block = wav1
-		wav1 = w
-
-		sliceCount >>= 1
-		sliceHalfSize <<= 1
-	}
-
-	for i := range ch.wav2 {
-		ch.wav2[i] = ch.block[i]
-	}
-
-	// wave set
-	for i := 0; i < 0x40; i++ {
-		ch.wave[index][i] = ch.wav2[0x40+i]*d5list3Float[0][i] + ch.wav3[i]
-	}
-	for i := 0; i < 0x40; i++ {
-		ch.wave[index][0x40+i] = d5list3Float[1][i]*ch.wav2[0x80-1-i] - ch.wav3[0x40+i]
-	}
-
-	// wav3 set
-	for i := 0; i < 0x40; i++ {
-		ch.wav3[i] = d5list3Float[1][0x40-1-i] * ch.wav2[0x40-1-i]
-	}
-	for i := 0; i < 0x40; i++ {
-		ch.wav3[0x40+i] = d5list3Float[0][0x40-1-i] * ch.wav2[i]
-	}
-}
 
 func uint2float1D(base []uint32) []float32 {
 	res := make([]float32, len(base))

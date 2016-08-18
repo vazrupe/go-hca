@@ -1,10 +1,10 @@
 package hca
 
-type ATH struct {
+type stATH struct {
 	table []byte
 }
 
-func (a *ATH) Init(t int, key uint32) bool {
+func (a *stATH) Init(t int, key uint32) bool {
 	switch t {
 	case 0:
 		a.init0()
@@ -16,18 +16,18 @@ func (a *ATH) Init(t int, key uint32) bool {
 	return true
 }
 
-func (a *ATH) GetTable() []byte {
+func (a *stATH) GetTable() []byte {
 	return a.table
 }
 
-func (a *ATH) init0() {
+func (a *stATH) init0() {
 	a.table = make([]byte, 0x80)
 	for i := range a.table {
 		a.table[i] = 0
 	}
 }
 
-func (a *ATH) init1(key uint32) {
+func (a *stATH) init1(key uint32) {
 	a.table = make([]byte, 0x80)
 	list := []byte{0x78, 0x5F, 0x56, 0x51, 0x4E, 0x4C, 0x4B, 0x49, 0x48, 0x48, 0x47, 0x46, 0x46, 0x45, 0x45, 0x45,
 		0x44, 0x44, 0x44, 0x44, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,

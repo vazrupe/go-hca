@@ -6,7 +6,48 @@ import (
 	"github.com/vazrupe/endibuf"
 )
 
-type stWAVEHeader struct {
+type stWaveHeader struct {
+	Riff *stWAVEriff
+	Smpl *stWAVEsmpl
+	Note *stWAVEnote
+	Data *stWAVEdata
+
+	RiffOk bool
+	SmplOk bool
+	NoteOk bool
+	DataOk bool
+}
+
+func newWaveHeader() *stWaveHeader {
+	return &stWaveHeader{
+		Riff: newWaveRiff(),
+		Smpl: newWaveSmpl(),
+		Note: newWaveNote(),
+		Data: newWaveData(),
+
+		RiffOk: true,
+		SmplOk: false,
+		NoteOk: false,
+		DataOk: true,
+	}
+}
+
+func (wv *stWaveHeader) Write(w *endibuf.Writer) {
+	if wv.RiffOk {
+		wv.Riff.Write(w)
+	}
+	if wv.SmplOk {
+		wv.Smpl.Write(w)
+	}
+	if wv.NoteOk {
+		wv.Note.Write(w)
+	}
+	if wv.DataOk {
+		wv.Data.Write(w)
+	}
+}
+
+type stWAVEriff struct {
 	riff             []byte
 	riffSize         uint32
 	wave             []byte
@@ -20,8 +61,8 @@ type stWAVEHeader struct {
 	fmtBitCount      uint16
 }
 
-func NewWaveHeader() stWAVEHeader {
-	return stWAVEHeader{
+func newWaveRiff() *stWAVEriff {
+	return &stWAVEriff{
 		riff:             []byte{'R', 'I', 'F', 'F'},
 		riffSize:         0,
 		wave:             []byte{'W', 'A', 'V', 'E'},
@@ -36,7 +77,7 @@ func NewWaveHeader() stWAVEHeader {
 	}
 }
 
-func (h stWAVEHeader) Write(w *endibuf.Writer) {
+func (h *stWAVEriff) Write(w *endibuf.Writer) {
 	endianSave := w.Endian
 
 	w.Endian = binary.BigEndian
@@ -81,8 +122,8 @@ type stWAVEsmpl struct {
 	loopPlayCount     uint32
 }
 
-func NewWaveSmpl() stWAVEsmpl {
-	return stWAVEsmpl{
+func newWaveSmpl() *stWAVEsmpl {
+	return &stWAVEsmpl{
 		smpl:              []byte{'s', 'm', 'p', 'l'},
 		smplSize:          0x3C,
 		manufacturer:      0,
@@ -103,7 +144,7 @@ func NewWaveSmpl() stWAVEsmpl {
 	}
 }
 
-func (s stWAVEsmpl) Write(w *endibuf.Writer) {
+func (s *stWAVEsmpl) Write(w *endibuf.Writer) {
 	endianSave := w.Endian
 
 	w.Endian = binary.BigEndian
@@ -134,17 +175,18 @@ type stWAVEnote struct {
 	note     []byte
 	noteSize uint32
 	dwName   uint32
+	comm     string
 }
 
-func NewWaveNote() stWAVEnote {
-	return stWAVEnote{
+func newWaveNote() *stWAVEnote {
+	return &stWAVEnote{
 		note:     []byte{'n', 'o', 't', 'e'},
 		noteSize: 0,
 		dwName:   0,
 	}
 }
 
-func (n stWAVEnote) Write(w *endibuf.Writer, comm string) {
+func (n *stWAVEnote) Write(w *endibuf.Writer) {
 	endianSave := w.Endian
 
 	w.Endian = binary.BigEndian
@@ -153,7 +195,7 @@ func (n stWAVEnote) Write(w *endibuf.Writer, comm string) {
 	w.Endian = binary.LittleEndian
 	w.WriteUint32(n.noteSize)
 	w.WriteUint32(n.dwName)
-	w.WriteCString(comm)
+	w.WriteCString(n.comm)
 
 	w.Endian = endianSave
 }
@@ -163,14 +205,14 @@ type stWAVEdata struct {
 	dataSize uint32
 }
 
-func NewWaveData() stWAVEdata {
-	return stWAVEdata{
+func newWaveData() *stWAVEdata {
+	return &stWAVEdata{
 		data:     []byte{'d', 'a', 't', 'a'},
 		dataSize: 0,
 	}
 }
 
-func (d stWAVEdata) Write(w *endibuf.Writer) {
+func (d *stWAVEdata) Write(w *endibuf.Writer) {
 	endianSave := w.Endian
 
 	w.Endian = binary.BigEndian
