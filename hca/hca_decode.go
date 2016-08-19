@@ -18,7 +18,7 @@ func (h *Hca) DecodeFromFile(src, dst string) bool {
 	}
 	defer f.Close()
 	r := endibuf.NewReader(f)
-	f2, err := os.Create(src)
+	f2, err := os.Create(dst)
 	if err != nil {
 		return false
 	}
