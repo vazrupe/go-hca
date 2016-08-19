@@ -1,9 +1,6 @@
 package hca
 
-import (
-	"fmt"
-	"math"
-)
+import "math"
 
 type stChannel struct {
 	chType int
@@ -97,7 +94,6 @@ var (
 func (ch *stChannel) Init(data *clData, a uint32, b int, ath []byte) {
 	v := data.GetBit(3)
 
-	fmt.Println(a, b, ch.count)
 	if v >= 6 {
 		for i := uint32(0); i < ch.count; i++ {
 			ch.value[i] = byte(data.GetBit(6))
@@ -237,7 +233,6 @@ var (
 // Decode3 set block
 func (ch *stChannel) BlockSetup1(a, b, c, d uint32) {
 	if ch.chType != 2 && b != 0 {
-		fmt.Println(a, b, c, d)
 		k := c
 		l := c - 1
 		for i := uint32(0); i < a; i++ {
@@ -254,7 +249,6 @@ func (ch *stChannel) BlockSetup1(a, b, c, d uint32) {
 			}
 		}
 		ch.block[0x80-1] = 0
-		fmt.Printf("block\n%e\n", ch.block)
 	}
 }
 

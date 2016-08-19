@@ -3,7 +3,6 @@ package hca
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -228,7 +227,6 @@ func (h *Hca) decode(data []byte) bool {
 	mask := h.cipher.Mask(data)
 	d := &clData{}
 	d.Init(mask, int(h.blockSize))
-	fmt.Printf("% x\n", mask)
 	magic := d.GetBit(16)
 	if magic == 0xFFFF {
 		a := (d.GetBit(9) << 8) - d.GetBit(7)
