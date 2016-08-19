@@ -2,6 +2,7 @@ package hca
 
 import "github.com/vazrupe/endibuf"
 
+// Hca is Hca File Structor
 type Hca struct {
 	CiphKey1 uint32
 	CiphKey2 uint32

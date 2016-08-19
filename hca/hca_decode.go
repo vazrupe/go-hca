@@ -10,19 +10,35 @@ import (
 	"github.com/vazrupe/endibuf"
 )
 
+// DecodeFromFile is file decode, return decode success/failed
+func (h *Hca) DecodeFromFile(src, dst string) bool {
+	f, err := os.Open(src)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	r := endibuf.NewReader(f)
+	f2, err := os.Create(src)
+	if err != nil {
+		return false
+	}
+	w := endibuf.NewWriter(f2)
+
+	success := h.decodeBuffer(r, w)
+
+	f2.Close()
+	if !success {
+		os.Remove(dst)
+		return false
+	}
+
+	return true
+}
+
+// DecodeFromBytes is []byte data decode
 func (h *Hca) DecodeFromBytes(data []byte) (decoded []byte, ok bool) {
 	decodedData := []byte{}
 
-	// size check
-	if h.Loop < 0 {
-		return decodedData, false
-	}
-	switch h.Mode {
-	case ModeFloat, Mode8Bit, Mode16Bit, Mode24Bit, Mode32Bit:
-		break
-	default:
-		return decodedData, false
-	}
 	if len(data) < 8 {
 		return decodedData, false
 	}
@@ -36,18 +52,46 @@ func (h *Hca) DecodeFromBytes(data []byte) (decoded []byte, ok bool) {
 	base := bytes.NewReader(data)
 	buf := io.NewSectionReader(base, 0, base.Size())
 	r := endibuf.NewReader(buf)
-	r.Endian = binary.BigEndian
-
-	// header read
-	if !h.loadHeader(r) {
-		return decodedData, false
-	}
-	r.Seek(int64(h.dataOffset), 0)
 
 	// create temp file (write)
 	tempfile, _ := ioutil.TempFile("", "hca_wav_temp_")
 	defer os.Remove(tempfile.Name())
 	w := endibuf.NewWriter(tempfile)
+	w.Endian = binary.LittleEndian
+
+	if !h.decodeBuffer(r, w) {
+		return decodedData, false
+	}
+
+	tempfile.Seek(0, 0)
+	decodedData, _ = ioutil.ReadAll(tempfile)
+
+	return decodedData, true
+}
+
+func (h *Hca) decodeBuffer(r *endibuf.Reader, w *endibuf.Writer) bool {
+	saveEndian := r.Endian
+
+	r.Endian = binary.BigEndian
+
+	// size check
+	if h.Loop < 0 {
+		return false
+	}
+	switch h.Mode {
+	case ModeFloat, Mode8Bit, Mode16Bit, Mode24Bit, Mode32Bit:
+		break
+	default:
+		return false
+	}
+
+	// header read
+	if !h.loadHeader(r) {
+		return false
+	}
+	r.Seek(int64(h.dataOffset), 0)
+
+	// create temp file (write)
 	w.Endian = binary.LittleEndian
 
 	wavHeader := h.buildWaveHeader()
@@ -59,27 +103,27 @@ func (h *Hca) DecodeFromBytes(data []byte) (decoded []byte, ok bool) {
 	// decode
 	if h.Loop == 0 {
 		if !h.decodeFromBytesDecode(r, w, h.dataOffset, h.blockCount) {
-			return decodedData, false
+			return false
 		}
 	} else {
 		loopBlockOffset := h.dataOffset + h.loopStart*h.blockSize
 		loopBlockCount := h.loopEnd - h.loopStart
 		if !h.decodeFromBytesDecode(r, w, h.dataOffset, h.loopEnd) {
-			return decodedData, false
+			return false
 		}
 		for i := 1; i < h.Loop; i++ {
 			if !h.decodeFromBytesDecode(r, w, loopBlockOffset, loopBlockCount) {
-				return decodedData, false
+				return false
 			}
 		}
 		if !h.decodeFromBytesDecode(r, w, loopBlockOffset, h.blockCount-h.loopStart) {
-			return decodedData, false
+			return false
 		}
 	}
-	tempfile.Seek(0, 0)
-	decodedData, _ = ioutil.ReadAll(tempfile)
 
-	return decodedData, true
+	r.Endian = saveEndian
+
+	return true
 }
 
 func (h *Hca) buildWaveHeader() *stWaveHeader {
