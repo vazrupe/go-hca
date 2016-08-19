@@ -2,6 +2,7 @@ package hca
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/vazrupe/endibuf"
 )
@@ -156,6 +157,7 @@ func (h *Hca) loadHeader(r *endibuf.Reader) bool {
 		return false
 	}
 	h.compR09 = ceil2(h.compR05-(h.compR06+h.compR07), h.compR08)
+	fmt.Println(h.compR05, h.compR06, h.compR07, h.compR08, h.compR09)
 	tmp := make([]byte, 0x10)
 	for i := range tmp {
 		tmp[i] = 0
@@ -335,7 +337,7 @@ func (h *Hca) commHeaderRead(r *endibuf.Reader) bool {
 func ceil2(a, b uint32) uint32 {
 	t := uint32(0)
 	if b > 0 {
-		t := a / b
+		t = a / b
 		if (a % b) > 0 {
 			t++
 		}
