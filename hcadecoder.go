@@ -30,9 +30,8 @@ func main() {
 	files := flag.Args()
 
 	for _, filename := range files {
-		name := filepath.Base(filename)
-
 		setSaveDir := (*saveDir) != defaultDir
+		ext := filepath.Ext(filename)
 		savename := filename[:len(filename)-len(ext)] + ".wav"
 		if setSaveDir {
 			_, name := filepath.Split(savename)
