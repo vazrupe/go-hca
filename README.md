@@ -9,10 +9,11 @@ Installation
 
 Usage
 -----
+Library Load:
 
     import (
         ...
-        hca "github.com/vazrupe/go-hca"
+        hca "github.com/vazrupe/go-hca/hca"
         ...
     )
 
@@ -24,9 +25,13 @@ Usage
     }
     ...
 
+Binary Use:
+
+    go-hca -c1=YOUR_KEY1 -c2=YOUR_KEY2 files...
+
 Lisence
 -------
-WTFPL 2.0
+[WTFPL 2.0](https://github.com/vazrupe/go-hca/blob/master/LICENSE)
 
 Reference
 ---------
