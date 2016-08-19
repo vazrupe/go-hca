@@ -19,7 +19,17 @@ func (d *clData) CheckBit(bitSize int) int {
 	if (d.bit + bitSize) <= d.size {
 		mask := []int{0xFFFFFF, 0x7FFFFF, 0x3FFFFF, 0x1FFFFF, 0x0FFFFF, 0x07FFFF, 0x03FFFF, 0x01FFFF}
 		idx := d.bit >> 3
-		data := d.data[idx : idx+3]
+		var data []byte
+		if len(d.data) < (idx + 3) {
+			data = d.data[idx:len(d.data)]
+
+			for len(data) < 3 {
+				data = append(data, 0)
+			}
+		} else {
+			data = d.data[idx : idx+3]
+		}
+
 		v = int(data[0])
 		v = (v << 8) | int(data[1])
 		v = (v << 8) | int(data[2])
