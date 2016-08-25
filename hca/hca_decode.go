@@ -211,7 +211,6 @@ func (h *Hca) decodeFromBytesDecode(r *endibuf.Reader, w *endibuf.Writer, addres
 		h.save(saveBlock, w)
 
 		address += h.blockSize
-		//break
 	}
 	return true
 }
@@ -236,10 +235,10 @@ func (h *Hca) decode(data []byte) bool {
 		for waveLine := 0; waveLine < 8; waveLine++ {
 			for j := uint32(0); j < h.channelCount; j++ {
 				h.channel[j].Fetch(d)
-				h.channel[j].BlockSetup1(h.compR09, h.compR08, h.compR07+h.compR06, h.compR05)
+				h.channel[j].BlockSet(h.compR09, h.compR08, h.compR07+h.compR06, h.compR05)
 			}
 			for j := uint32(0); j < (h.channelCount - 1); j++ {
-				h.channel[j].BlockSetup2(h.channel[j+1], waveLine, h.compR05-h.compR06, h.compR06, h.compR07)
+				h.channel[j].MixBlock(h.channel[j+1], waveLine, h.compR05-h.compR06, h.compR06, h.compR07)
 			}
 			for j := uint32(0); j < h.channelCount; j++ {
 				h.channel[j].CalcBlock()

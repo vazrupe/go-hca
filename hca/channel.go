@@ -231,7 +231,7 @@ var (
 )
 
 // Decode3 set block
-func (ch *stChannel) BlockSetup1(a, b, c, d uint32) {
+func (ch *stChannel) BlockSet(a, b, c, d uint32) {
 	if ch.chType != 2 && b != 0 {
 		k := c
 		l := c - 1
@@ -274,7 +274,7 @@ var (
 )
 
 // Decode4 set block
-func (ch *stChannel) BlockSetup2(nextChan *stChannel, index int, a, b, c uint32) {
+func (ch *stChannel) MixBlock(nextChan *stChannel, index int, a, b, c uint32) {
 	if ch.chType == 1 && c != 0 {
 		f1 := d4listFloat[nextChan.value2[index]]
 		f2 := f1 - 2.0
