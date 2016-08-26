@@ -148,62 +148,11 @@ func (h *Hca) loadHeader(r *endibuf.Reader) bool {
 	}
 
 	// decode preparation
-	h.channel = make([]*stChannel, h.channelCount)
-	for i := range h.channel {
-		h.channel[i] = newChannel()
-	}
 	if !(h.compR01 == 1 && h.compR02 == 15) {
 		return false
 	}
 	h.compR09 = ceil2(h.compR05-(h.compR06+h.compR07), h.compR08)
-	tmp := make([]byte, 0x10)
-	for i := range tmp {
-		tmp[i] = 0
-	}
-	b := h.channelCount / h.compR03
-	if h.compR07 != 0 && b > 1 {
-		for i := uint32(0); i < h.compR03; i++ {
-			switch b {
-			case 2, 3:
-				tmp[b*i+0] = 1
-				tmp[b*i+1] = 2
-			case 4:
-				tmp[b*i+0] = 1
-				tmp[b*i+1] = 2
-				if h.compR04 == 0 {
-					tmp[b*i+2] = 1
-					tmp[b*i+3] = 2
-				}
-			case 5:
-				tmp[b*i+0] = 1
-				tmp[b*i+1] = 2
-				if h.compR04 <= 2 {
-					tmp[b*i+3] = 1
-					tmp[b*i+4] = 2
-				}
-			case 6, 7:
-				tmp[b*i+0] = 1
-				tmp[b*i+1] = 2
-				tmp[b*i+4] = 1
-				tmp[b*i+5] = 2
-			case 8:
-				tmp[b*i+0] = 1
-				tmp[b*i+1] = 2
-				tmp[b*i+4] = 1
-				tmp[b*i+5] = 2
-				tmp[b*i+6] = 1
-				tmp[b*i+7] = 2
-			}
-		}
-	}
-	for i := uint32(0); i < h.channelCount; i++ {
-		h.channel[i].chType = int(tmp[i])
-		h.channel[i].valueIndex = h.compR06 + h.compR07
-		h.channel[i].count = h.compR06
-		if tmp[i] != 2 {
-			h.channel[i].count += h.compR07
-		}
-	}
+	h.decoder = newChannelDecoder(h.channelCount, h.compR03, h.compR04, h.compR05, h.compR06, h.compR07, h.compR08, h.compR09)
 
 	r.Endian = endianSave
 	return true

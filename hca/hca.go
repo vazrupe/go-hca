@@ -50,9 +50,10 @@ type Hca struct {
 	commLen     uint32
 	commComment string
 
-	ath     stATH
-	cipher  *Cipher
-	channel []*stChannel
+	ath    stATH
+	cipher *Cipher
+
+	decoder *channelDecoder
 
 	saver func(f float32, w *endibuf.Writer)
 }

@@ -7,7 +7,7 @@ type stChannel struct {
 	count  uint32
 
 	base       [0x80]float32
-	value      [0x80]byte
+	value      [0x80]int8
 	valueIndex uint32
 	scale      [0x80]byte
 	value2     [8]byte
@@ -96,13 +96,13 @@ func (ch *stChannel) Init(data *clData, a uint32, b int, ath []byte) {
 
 	if v >= 6 {
 		for i := uint32(0); i < ch.count; i++ {
-			ch.value[i] = byte(data.GetBit(6))
+			ch.value[i] = int8(data.GetBit(6))
 		}
 	} else if v != 0 {
 		v1 := data.GetBit(6)
 		v2 := (1 << uint(v)) - 1
 		v3 := v2 >> 1
-		ch.value[0] = byte(v1)
+		ch.value[0] = int8(v1)
 		for i := uint32(1); i < ch.count; i++ {
 			v4 := data.GetBit(v)
 			if v4 != v2 {
@@ -110,7 +110,7 @@ func (ch *stChannel) Init(data *clData, a uint32, b int, ath []byte) {
 			} else {
 				v1 = data.GetBit(6)
 			}
-			ch.value[i] = byte(v1)
+			ch.value[i] = int8(v1)
 		}
 	} else {
 		for i := 0; i < 0x80; i++ {
@@ -128,7 +128,7 @@ func (ch *stChannel) Init(data *clData, a uint32, b int, ath []byte) {
 		}
 	} else {
 		for i := uint32(0); i < a; i++ {
-			ch.value[ch.valueIndex+i] = byte(data.GetBit(6))
+			ch.value[ch.valueIndex+i] = int8(data.GetBit(6))
 		}
 	}
 
@@ -156,12 +156,11 @@ func (ch *stChannel) Init(data *clData, a uint32, b int, ath []byte) {
 	}
 }
 
-// Fetch set block
-func (ch *stChannel) Fetch(data *clData) {
-	sizeList := []byte{
+var (
+	sizeList = []byte{
 		0, 2, 3, 3, 4, 4, 4, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 	}
-	list2 := []int{
+	shiftBase = []int{
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		1, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		2, 2, 2, 2, 2, 2, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -171,7 +170,7 @@ func (ch *stChannel) Fetch(data *clData) {
 		3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
 		3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
 	}
-	list3 := []float32{
+	tableData = []float32{
 		+0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0,
 		+0, +0, +1, -1, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0, +0,
 		+0, +0, +1, +1, -1, -1, +2, -2, +0, +0, +0, +0, +0, +0, +0, +0,
@@ -181,16 +180,19 @@ func (ch *stChannel) Fetch(data *clData) {
 		+0, +0, +1, +1, -1, -1, +2, -2, +3, -3, +4, -4, +5, -5, +6, -6,
 		+0, +0, +1, -1, +2, -2, +3, -3, +4, -4, +5, -5, +6, -6, +7, -7,
 	}
+)
 
+// Fetch set block
+func (ch *stChannel) Fetch(data *clData) {
+	var f float32
 	for i := uint32(0); i < ch.count; i++ {
-		var f float32
 		s := int(ch.scale[i])
 		bitSize := int(sizeList[s])
 		v := int(data.GetBit(bitSize))
 		if s < 8 {
 			v += s << 4
-			data.AddBit(list2[v] - bitSize)
-			f = list3[v]
+			data.AddBit(shiftBase[v] - bitSize)
+			f = tableData[v]
 		} else {
 			sign := (1 - ((v & 1) << 1))
 			v = sign * (v >> 1)
@@ -230,20 +232,14 @@ var (
 	d3listFloat = uint2float1D(d3listInt)
 )
 
-// Decode3 set block
+// BlockSet set block
 func (ch *stChannel) BlockSet(a, b, c, d uint32) {
 	if ch.chType != 2 && b != 0 {
 		k := c
 		l := c - 1
 		for i := uint32(0); i < a; i++ {
 			for j := uint32(0); j < b && k < d; j++ {
-				a1 := int8(ch.value[ch.valueIndex+i])
-				a2 := int8(ch.value[l])
-				a3 := ch.block[l]
-				a4 := a1 - a2
-				a5 := d3listFloat[64+a4]
-				//idx := 64 + (int8(ch.value[ch.valueIndex+i]) - int8(ch.value[l]))
-				ch.block[k] = a5 * a3
+				ch.block[k] = d3listFloat[64+(ch.value[ch.valueIndex+i]-ch.value[l])] * ch.block[l]
 				k++
 				l--
 			}
@@ -285,13 +281,13 @@ func (ch *stChannel) MixBlock(nextChan *stChannel, index int, a, b, c uint32) {
 	}
 }
 
-func (ch *stChannel) CalcBlock() {
-	blockTemp := make([]float32, len(ch.block))
+func calcBlock(b []float32) {
+	blockTemp := make([]float32, len(b))
 
 	s := 0
 	sliceCount := 1
 	sliceHalfSize := 0x40
-	block := &ch.block
+	block := &b
 	wavTmp := &blockTemp
 	for i := 0; i < 7; i++ {
 		sliceLeft := 0
@@ -321,7 +317,7 @@ func (ch *stChannel) CalcBlock() {
 
 	sliceCount = 0x40
 	sliceHalfSize = 1
-	block = &ch.block
+	block = &b
 	wavTmp = &blockTemp
 	for i := 0; i < 7; i++ {
 		srcSliceLeft := 0
@@ -500,7 +496,7 @@ var (
 // buildWaveBytes set wavTmp and wave
 func (ch *stChannel) buildWaveBytes(index int) {
 	// wave set
-	ch.wave[index] = waveCalc(waveBaseFloats, ch.block, ch.wavTmp)
+	ch.wave[index] = waveCalc(ch.block, ch.wavTmp)
 
 	// wavTmp set
 	for i := 0; i < 0x40; i++ {
@@ -511,13 +507,13 @@ func (ch *stChannel) buildWaveBytes(index int) {
 	}
 }
 
-func waveCalc(baseFloats [][]float32, block []float32, stream []float32) [0x80]float32 {
+func waveCalc(block []float32, stream []float32) [0x80]float32 {
 	var result [0x80]float32
 	for i := 0; i < 0x40; i++ {
-		result[i] = baseFloats[0][i]*block[0x40+i] + stream[i]
+		result[i] = waveBaseFloats[0][i]*block[0x40+i] + stream[i]
 	}
 	for i := 0; i < 0x40; i++ {
-		result[0x40+i] = baseFloats[1][i]*block[0x80-1-i] - stream[0x40+i]
+		result[0x40+i] = waveBaseFloats[1][i]*block[0x80-1-i] - stream[0x40+i]
 	}
 	return result
 }

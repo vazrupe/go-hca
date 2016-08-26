@@ -185,29 +185,13 @@ func (h *Hca) buildWaveHeader() *stWaveHeader {
 }
 
 func (h *Hca) decodeFromBytesDecode(r *endibuf.Reader, w *endibuf.Writer, address, count uint32) bool {
-	var f float32
 	r.Seek(int64(address), 0)
-	saveBlock := make([]float32, 8*0x80*h.channelCount)
 	for l := uint32(0); l < count; l++ {
 		data, _ := r.ReadBytes(int(h.blockSize))
 		if !h.decode(data) {
 			return false
 		}
-		for i := 0; i < 8; i++ {
-			channelBlockIdx := i * 0x80 * int(h.channelCount)
-			for j := 0; j < 0x80; j++ {
-				byteIdx := j * int(h.channelCount)
-				for k := uint32(0); k < h.channelCount; k++ {
-					f = h.channel[k].wave[i][j] * h.rvaVolume
-					if f > 1 {
-						f = 1
-					} else if f < -1 {
-						f = -1
-					}
-					saveBlock[channelBlockIdx+byteIdx+int(k)] = f
-				}
-			}
-		}
+		saveBlock := h.decoder.waveSerialize(h.rvaVolume)
 		h.save(saveBlock, w)
 
 		address += h.blockSize
@@ -228,23 +212,7 @@ func (h *Hca) decode(data []byte) bool {
 	d.Init(mask, int(h.blockSize))
 	magic := d.GetBit(16)
 	if magic == 0xFFFF {
-		a := (d.GetBit(9) << 8) - d.GetBit(7)
-		for i := uint32(0); i < h.channelCount; i++ {
-			h.channel[i].Init(d, h.compR09, a, h.ath.GetTable())
-		}
-		for waveLine := 0; waveLine < 8; waveLine++ {
-			for j := uint32(0); j < h.channelCount; j++ {
-				h.channel[j].Fetch(d)
-				h.channel[j].BlockSet(h.compR09, h.compR08, h.compR07+h.compR06, h.compR05)
-			}
-			for j := uint32(0); j < (h.channelCount - 1); j++ {
-				h.channel[j].MixBlock(h.channel[j+1], waveLine, h.compR05-h.compR06, h.compR06, h.compR07)
-			}
-			for j := uint32(0); j < h.channelCount; j++ {
-				h.channel[j].CalcBlock()
-				h.channel[j].buildWaveBytes(waveLine)
-			}
-		}
+		h.decoder.decode(d, h.ath.GetTable())
 	}
 	return true
 }
