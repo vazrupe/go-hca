@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	//"github.com/vazrupe/go-hca/hca"
-	"./hca"
+	"github.com/vazrupe/go-hca/hca"
 )
 
 func main() {
